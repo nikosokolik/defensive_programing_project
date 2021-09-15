@@ -16,7 +16,13 @@ class RequestHandler(socketserver.BaseRequestHandler):
 
     def _handle_request(self, header_obj: server_protocol.RequestHeader) -> None:
         payload = self._read_until_size_met(header_obj.payload_size)
-        self.request.send(ServerLogic.dispatch_payload(header_obj, payload).pack())
+        if not isinstance(self.server, Server):
+            raise RuntimeError(
+                "This RequestHandler cannot be used with a different server"
+            )
+        self.request.send(
+            self.server.server_logic.dispatch_payload(header_obj, payload)
+        )
 
     def handle(self) -> None:
         request_header = self._read_until_size_met(server_protocol.RequestHeader.size)
@@ -33,4 +39,9 @@ class Server(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
 
     def __init__(self, server_address, bind_and_activate=True) -> None:
-        super().__init__(server_address, RequestHandlerClass=RequestHandler, bind_and_activate=bind_and_activate)
+        super().__init__(
+            server_address,
+            RequestHandlerClass=RequestHandler,
+            bind_and_activate=bind_and_activate,
+        )
+        self.server_logic = ServerLogic()

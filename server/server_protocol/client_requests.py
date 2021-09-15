@@ -1,3 +1,4 @@
+import abc
 import enum
 import struct
 from dataclasses import dataclass
@@ -13,7 +14,7 @@ class RequestCode(enum.Enum):
     READ_MESSAGES = 1004
 
 
-class ProtocolStruct:
+class ClientRequest(abc.ABC):
     """
     A class that represents any struct that will be used by the server protocol. This provides the unpack function,
     which allows easy loading of data into struct according to the format of the header.
@@ -31,7 +32,7 @@ class ProtocolStruct:
 
 
 @dataclass
-class RequestHeader(ProtocolStruct):
+class RequestHeader(ClientRequest):
     format: ClassVar[struct.Struct] = struct.Struct("<16sBHi")
     client_id: bytes
     version: int
@@ -44,7 +45,7 @@ class RequestHeader(ProtocolStruct):
 
 
 @dataclass
-class SignupRequest(ProtocolStruct):
+class SignupRequest(ClientRequest):
     format: ClassVar[struct.Struct] = struct.Struct("<255s160s")
     name: bytes
     pub_key: bytes
@@ -53,12 +54,12 @@ class SignupRequest(ProtocolStruct):
 
 
 @dataclass
-class UserList(ProtocolStruct):
+class UserList(ClientRequest):
     size: int = 0
 
 
 @dataclass
-class UserPublicKeyRequest(ProtocolStruct):
+class UserPublicKeyRequest(ClientRequest):
     format: ClassVar[struct.Struct] = struct.Struct("<16s")
     target_client_id: bytes
     size: int = format.size
@@ -66,7 +67,7 @@ class UserPublicKeyRequest(ProtocolStruct):
 
 
 @dataclass
-class SendMessageRequest(ProtocolStruct):
+class SendMessageRequest(ClientRequest):
     format: ClassVar[struct.Struct] = struct.Struct("<16sBi")
     target_client_id: bytes
     message_type: int
@@ -86,5 +87,5 @@ class SendMessageRequest(ProtocolStruct):
 
 
 @dataclass
-class GetAvailableMessages(ProtocolStruct):
+class GetAvailableMessages(ClientRequest):
     size: int = 0

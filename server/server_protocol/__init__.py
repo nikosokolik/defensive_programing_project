@@ -1,5 +1,6 @@
 from server_protocol.utils import ProtocolError
 from server_protocol.client_requests import (
+    ClientRequest,
     RequestCode,
     RequestHeader,
     SignupRequest,

@@ -1,3 +1,4 @@
+import abc
 import enum
 import struct
 from server_protocol.utils import generate_pack
@@ -17,7 +18,7 @@ class ResponseCode(enum.Enum):
 SERVER_VERSION = 1
 
 
-class ServerResponse:
+class ServerResponse(abc.ABC):
     """
     A class that represents a server response. Should not be used directly but rather inherited from.
     """
