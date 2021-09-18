@@ -13,9 +13,11 @@ from server_protocol.server_responses import (
     ResponseCode,
     ServerResponse,
     SignupSuccess,
+    ClientRecord,
     UserListResponse,
     UserPublicKey,
     MessageSent,
+    MessageRecord,
     MessageList,
     ErrorResponse,
 )

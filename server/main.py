@@ -7,7 +7,11 @@ def get_port() -> int:
     if not port_file.exists():
         print("Port file not found!")
         exit(-1)
-    return int(port_file.read_text().splitlines()[0])
+    try:
+        return int(port_file.read_text().splitlines()[0].strip())
+    except ValueError:
+        print(f"Could not load port file {port_file}")
+        exit(-1)
 
 
 def main() -> None:

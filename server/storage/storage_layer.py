@@ -16,7 +16,6 @@ class StorageLayer(abc.ABC):
         self, identifier: str
     ) -> Tuple[uuid.UUID, str, str, datetime.datetime]:
         """
-        Retur
         :param identifier: user_id
         :return: user_id, name, public_key and last_seen_time
         """
@@ -34,6 +33,22 @@ class StorageLayer(abc.ABC):
     def get_message_list_for_user(
         self, identifier: str
     ) -> List[Tuple[str, str, str, int, bytes]]:
+        ...
+
+    @abc.abstractmethod
+    def get_user_id_list(self, id_to_ignore: str) -> List[str]:
+        ...
+
+    @abc.abstractmethod
+    def send_message(self, sender, receiver, message_type, content) -> str:
+        ...
+
+    @abc.abstractmethod
+    def update_user_last_seen(self, user_id) -> None:
+        ...
+
+    @abc.abstractmethod
+    def close_connection(self) -> None:
         ...
 
 
@@ -92,6 +107,16 @@ class User:
             )
         return messages
 
+    def send_message(
+        self,
+        storage_layer: StorageLayer,
+        sender: str,
+        message_type: int,
+        content: bytes,
+    ) -> str:
+        message_id = storage_layer.send_message(sender, self.id, message_type, content)
+        return message_id
+
     @property
     def id(self) -> str:
         return str(self._id)
@@ -107,3 +132,12 @@ class User:
     @property
     def last_seen(self) -> str:
         return self._name
+
+
+class UserList:
+    @staticmethod
+    def get_user_list(storage_layer: StorageLayer, user_to_ignore: str) -> List[User]:
+        users: List[User] = []
+        for user_id in storage_layer.get_user_id_list(user_to_ignore):
+            users.append(User.get_user_by_id(storage_layer, user_id))
+        return users

@@ -15,7 +15,7 @@ class ResponseCode(enum.Enum):
     ERROR = 9000
 
 
-SERVER_VERSION = 1
+SERVER_VERSION = 2
 
 
 class ServerResponse(abc.ABC):

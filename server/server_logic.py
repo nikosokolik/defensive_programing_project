@@ -1,12 +1,14 @@
 import logging
+import pathlib
 import server_protocol
-from database_storage import DBStorage
-from storage_layer import StorageLayer, StorageLayerException, User
+from storage.database_storage import DBStorage
 from typing import Dict, TypeVar, Any, Callable, Type, List
+from storage.storage_layer import StorageLayer, StorageLayerException, User, UserList
 
 
 T = TypeVar("T", bound=Callable[..., Any])
 logger = logging.getLogger(__name__)
+DATABASE_PATH = pathlib.Path(__file__).parent.joinpath("server.db")
 
 
 def safe_call_decorator(func: T) -> T:
@@ -52,7 +54,9 @@ class DispatchManager:
         self._storage: StorageLayer = storage
         self._dispatch_request_funcs_dict: Dict[
             Type[server_protocol.ClientRequest],
-            Callable[[server_protocol.RequestHeader], server_protocol.ServerResponse],
+            Callable[
+                [server_protocol.ClientRequest, str], server_protocol.ServerResponse
+            ],
         ] = {
             server_protocol.SignupRequest: self._dispatch_signup,
             server_protocol.UserList: self._dispatch_user_list,
@@ -67,35 +71,53 @@ class DispatchManager:
 
     @safe_call_decorator
     def _dispatch_signup(
-        self, request: server_protocol.SignupRequest
+        self, request: server_protocol.SignupRequest, client_id: str
     ) -> server_protocol.SignupSuccess:
         user = User.create_new_user(self._storage, request)
         return server_protocol.SignupSuccess(user.id.decode())
 
     @safe_call_decorator
     def _dispatch_user_list(
-        self, request: server_protocol.UserList
+        self, request: server_protocol.UserList, client_id: str
     ) -> server_protocol.UserListResponse:
-        pass
+        clients: List[server_protocol.ClientRecord] = []
+        for client in UserList.get_user_list(self._storage, client_id):
+            clients.append(
+                server_protocol.ClientRecord(client.id.encode(), client.name.encode())
+            )
+        return server_protocol.UserListResponse(clients)
 
     @safe_call_decorator
     def _dispatch_user_public_key_request(
-        self, request: server_protocol.UserPublicKeyRequest
+        self, request: server_protocol.UserPublicKeyRequest, client_id: str
     ) -> server_protocol.UserPublicKey:
         user = User.get_user_by_id(self._storage, request.target_client_id.decode())
         return server_protocol.UserPublicKey(user.id.encode(), user.public_key.encode())
 
     @safe_call_decorator
     def _dispatch_send_message(
-        self, request: server_protocol.SendMessageRequest
+        self, request: server_protocol.SendMessageRequest, client_id: str
     ) -> server_protocol.MessageSent:
-        pass
+        user = User.get_user_by_id(self._storage, request.target_client_id.decode())
+        message_id = user.send_message(
+            self._storage, client_id, request.message_type, request.message_content
+        )
+        return server_protocol.MessageSent(user.id, message_id)
 
     @safe_call_decorator
     def _dispatch_get_messages(
-        self, request: server_protocol.GetAvailableMessages
+        self, request: server_protocol.GetAvailableMessages, client_id: str
     ) -> server_protocol.MessageList:
-        pass
+        user = User.get_user_by_id(self._storage, client_id)
+        messages = user.get_all_messages(self._storage)
+        message_list: List[server_protocol.MessageRecord] = []
+        for message in messages:
+            message_list.append(
+                server_protocol.MessageRecord(
+                    message.sourcem, message.message_id, message.content
+                )
+            )
+        return server_protocol.MessageList(message_list)
 
     def _check_user_valid(self, user_id: bytes) -> bool:
         try:
@@ -105,12 +127,11 @@ class DispatchManager:
             return False
 
     def _dispatch(
-        self,
-        payload: server_protocol.RequestHeader,
+        self, payload: server_protocol.RequestHeader, client_id: str
     ) -> server_protocol.ServerResponse:
         if not type(payload) not in self._dispatch_request_funcs_dict.keys():
             raise ServerLogicalException("This line should never be reached")
-        return self._dispatch_request_funcs_dict[type(payload)](payload)
+        return self._dispatch_request_funcs_dict[type(payload)](payload, client_id)
 
     @safe_call_decorator
     def dispatch_payload(
@@ -125,22 +146,25 @@ class DispatchManager:
             server_protocol.RequestCode(request_header)
         ].unpack(payload)
         logger.debug("Got request {!r}".format(payload))
-        if (
-            request_header.code in DispatchManager.AUTH_REQUIRED_REQUESTS
-            and not self._check_user_valid(request_header.client_id)
-        ):
-            raise SecurityException(
-                "User with id {!r} does not exit!".format(request_header.client_id)
-            )
-        return self._dispatch(request)
+        if request_header.code in DispatchManager.AUTH_REQUIRED_REQUESTS:
+            if self._check_user_valid(request_header.client_id):
+                self._storage.update_user_last_seen(request_header.client_id)
+            else:
+                raise SecurityException(
+                    "User with id {!r} does not exit!".format(request_header.client_id)
+                )
+        return self._dispatch(request, request_header.client_id.decode())
 
 
 class ServerLogic:
     def __init__(self) -> None:
-        self._storage = DBStorage()
+        self._storage = DBStorage(DATABASE_PATH)
         self._dispatch_manager: DispatchManager = DispatchManager(self._storage)
 
     def dispatch_payload(
         self, request_header: server_protocol.RequestHeader, payload: bytes
     ) -> bytes:
         return self._dispatch_manager.dispatch_payload(request_header, payload).pack()
+
+    def close_connection(self) -> None:
+        self._storage.close_connection()

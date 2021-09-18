@@ -45,3 +45,7 @@ class Server(socketserver.ThreadingTCPServer):
             bind_and_activate=bind_and_activate,
         )
         self.server_logic = ServerLogic()
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.server_logic.close_connection()
+        super().__exit__(exc_type, exc_val, exc_tb)
