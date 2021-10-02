@@ -32,7 +32,7 @@ class ServerResponse(abc.ABC):
 
     def pack(self) -> bytes:
         return (
-            self._header_format.pack(self.version, self.code, self.payload_size)
+            self._header_format.pack(self.version, self.code.value, self.payload_size)
             + self.payload
         )
 
@@ -59,11 +59,12 @@ class ClientRecord:
     """
     A class that represents a client in the client list response
     """
-
     format: ClassVar[struct.Struct] = struct.Struct("<16s255s")
     client_id: bytes
     client_name: bytes
-    pack: Callable[[], bytes] = generate_pack(["client_id", "client_name"])
+
+    def pack(self) -> bytes:
+        return generate_pack(self, ["client_id", "client_name"])
 
 
 class UserListResponse(ServerResponse):

@@ -8,7 +8,7 @@ from storage.storage_layer import StorageLayer, StorageLayerException
 CREATE_TABLES = [
     """CREATE TABLE IF NOT EXISTS client (
     id VARCHAR(16) NOT NULL,
-    name INT(250) NOT NULL,
+    name VARCHAR(250) NOT NULL,
     public_key VARBINARY(160) NOT NULL,
     last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id)
@@ -18,12 +18,14 @@ CREATE_TABLES = [
     source VARCHAR(16) NOT NULL,
     destination VARCHAR(16) NOT NULL,
     type INT(1) NOT NULL,
-    content BLOB NOT NULL
+    content BLOB NOT NULL,
+    FOREIGN KEY(source) REFERENCES client(id),
+    FOREIGN KEY(destination) REFERENCES client(id)
 );""",
 ]
 SELECT_USER_BY_ID = """SELECT * FROM client WHERE id=?;"""
 SELECT_USER_ID_LIST = """SELECT id FROM client WHERE id!=?;"""
-INSERT_NEW_USER = """INSERT INTO client VALUES (?,?,?);"""
+INSERT_NEW_USER = """INSERT INTO client (id, name, public_key) VALUES (?,?,?);"""
 SELECT_UNREAD_MESSAGES = """SELECT * FROM message WHERE destination=?;"""
 UPDATE_LAST_SEEN = """UPDATE client SET last_seen=? WHERE id=?;"""
 DELETE_MESSAGE = """DELETE FROM message WHERE id=?;"""
@@ -47,7 +49,7 @@ def safe_sql_call(func: Callable[..., Any]) -> Callable[..., Any]:
 
 class DBStorage(StorageLayer):
     def __init__(self, connection_string: str = ":memory:"):
-        self.connection = sqlite3.connect(connection_string)
+        self.connection = sqlite3.connect(connection_string, check_same_thread=False)
         self._create_tables()
 
     def close_connection(self):
@@ -64,7 +66,7 @@ class DBStorage(StorageLayer):
     ) -> Tuple[uuid.UUID, str, str, datetime.datetime]:
         identifier = identifier.replace("-", "")
         with self.connection:
-            for user in self.connection.execute(SELECT_USER_BY_ID, identifier):
+            for user in self.connection.execute(SELECT_USER_BY_ID, (identifier,)):
                 return (
                     uuid.UUID(hex=user[0]),
                     user[1],
@@ -83,9 +85,9 @@ class DBStorage(StorageLayer):
             return False
 
     def _generate_available_user_id(self) -> str:
-        identifier = uuid.uuid4()
+        identifier = str(uuid.uuid4())
         while self.check_if_user_exists(identifier):
-            identifier = uuid.uuid4()
+            identifier = str(uuid.uuid4())
         return str(identifier).replace("-", "")
 
     @safe_sql_call
@@ -100,8 +102,8 @@ class DBStorage(StorageLayer):
         id_to_ignore = id_to_ignore.replace("-", "")
         with self.connection:
             return [
-                line
-                for line in self.connection.execute(SELECT_USER_ID_LIST, id_to_ignore)
+                line[0]
+                for line in self.connection.execute(SELECT_USER_ID_LIST, (id_to_ignore,))
             ]
 
     @safe_sql_call

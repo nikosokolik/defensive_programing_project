@@ -1,5 +1,6 @@
 import abc
 import uuid
+import base64
 import datetime
 from dataclasses import dataclass
 from typing import Tuple, Any, List
@@ -71,7 +72,7 @@ class User:
     ) -> None:
         self._id = identifier
         self._name = name
-        self._public_key = public_key
+        self._public_key = base64.b64decode(public_key)
         self._last_seen = last_seen
 
     @staticmethod
@@ -83,7 +84,8 @@ class User:
     @staticmethod
     def create_new_user(storage_layer: StorageLayer, request: SignupRequest) -> Any:
         new_id = storage_layer.create_new_user(
-            name=request.name.decode(), public_key=request.pub_key.decode()
+            name=request.name.decode(),
+            public_key=base64.b64encode(request.pub_key).decode(),
         )
         return User.get_user_by_id(storage_layer, new_id)
 
@@ -119,7 +121,7 @@ class User:
 
     @property
     def id(self) -> str:
-        return str(self._id)
+        return str(self._id).replace("-", "")
 
     @property
     def name(self) -> str:
@@ -127,11 +129,11 @@ class User:
 
     @property
     def public_key(self) -> str:
-        return self._name
+        return self._public_key
 
     @property
     def last_seen(self) -> str:
-        return self._name
+        return self._last_seen
 
 
 class UserList:

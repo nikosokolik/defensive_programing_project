@@ -1,3 +1,4 @@
+import uuid
 import logging
 import pathlib
 import server_protocol
@@ -17,10 +18,10 @@ def safe_call_decorator(func: T) -> T:
             return func(*args, **kwargs)
         except (SecurityException, ServerLogicalException) as e:
             logger.error(f"Error responding to client! {type(e)} - {e}")
-            return server_protocol.ProtocolError()
+            return server_protocol.ErrorResponse()
         except Exception:
             logger.exception("Caught an exception while responding to client!")
-            return server_protocol.ProtocolError()
+            return server_protocol.ErrorResponse()
 
     return wrapper  # type: ignore
 
@@ -74,7 +75,7 @@ class DispatchManager:
         self, request: server_protocol.SignupRequest, client_id: str
     ) -> server_protocol.SignupSuccess:
         user = User.create_new_user(self._storage, request)
-        return server_protocol.SignupSuccess(user.id.decode())
+        return server_protocol.SignupSuccess(user.id.encode())
 
     @safe_call_decorator
     def _dispatch_user_list(
@@ -83,7 +84,7 @@ class DispatchManager:
         clients: List[server_protocol.ClientRecord] = []
         for client in UserList.get_user_list(self._storage, client_id):
             clients.append(
-                server_protocol.ClientRecord(client.id.encode(), client.name.encode())
+                server_protocol.ClientRecord(uuid.UUID(client.id).bytes, client.name.encode())
             )
         return server_protocol.UserListResponse(clients)
 
@@ -91,8 +92,8 @@ class DispatchManager:
     def _dispatch_user_public_key_request(
         self, request: server_protocol.UserPublicKeyRequest, client_id: str
     ) -> server_protocol.UserPublicKey:
-        user = User.get_user_by_id(self._storage, request.target_client_id.decode())
-        return server_protocol.UserPublicKey(user.id.encode(), user.public_key.encode())
+        user = User.get_user_by_id(self._storage, request.target_client_id.hex())
+        return server_protocol.UserPublicKey(user.id.encode(), user.public_key)
 
     @safe_call_decorator
     def _dispatch_send_message(
@@ -129,7 +130,7 @@ class DispatchManager:
     def _dispatch(
         self, payload: server_protocol.RequestHeader, client_id: str
     ) -> server_protocol.ServerResponse:
-        if not type(payload) not in self._dispatch_request_funcs_dict.keys():
+        if type(payload) not in self._dispatch_request_funcs_dict.keys():
             raise ServerLogicalException("This line should never be reached")
         return self._dispatch_request_funcs_dict[type(payload)](payload, client_id)
 
@@ -138,12 +139,14 @@ class DispatchManager:
         self, request_header: server_protocol.RequestHeader, payload: bytes
     ) -> server_protocol.ServerResponse:
         if (
-            request_header.code not in server_protocol.RequestCode
-            or request_header.code not in self._dispatch_request_types_dict
+            request_header.code
+            not in [item.value for item in server_protocol.RequestCode]
+            or server_protocol.RequestCode(request_header.code)
+            not in self._dispatch_request_types_dict.keys()
         ):
             raise ServerLogicalException("Unexpected request code!")
         request = self._dispatch_request_types_dict[
-            server_protocol.RequestCode(request_header)
+            server_protocol.RequestCode(request_header.code)
         ].unpack(payload)
         logger.debug("Got request {!r}".format(payload))
         if request_header.code in DispatchManager.AUTH_REQUIRED_REQUESTS:
@@ -158,7 +161,7 @@ class DispatchManager:
 
 class ServerLogic:
     def __init__(self) -> None:
-        self._storage = DBStorage(DATABASE_PATH)
+        self._storage = DBStorage(str(DATABASE_PATH))
         self._dispatch_manager: DispatchManager = DispatchManager(self._storage)
 
     def dispatch_payload(
