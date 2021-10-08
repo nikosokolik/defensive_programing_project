@@ -1,3 +1,4 @@
+#!/bin/python
 import pathlib
 from server import Server
 
@@ -17,7 +18,10 @@ def get_port() -> int:
 def main() -> None:
     port = get_port()
     with Server(("0.0.0.0", port)) as serv:
-        serv.serve_forever()
+        try:
+            serv.serve_forever()
+        except:
+            print("Shutting server down!")
 
 
 if __name__ == "__main__":

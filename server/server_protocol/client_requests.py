@@ -25,7 +25,10 @@ class ClientRequest(abc.ABC):
     @classmethod
     def unpack(cls, data: bytes):
         try:
-            args = cls.format.unpack_from(data)
+            if hasattr(cls, "format"):
+                args = cls.format.unpack_from(data)
+            else:
+                return cls()
         except struct.error:
             raise ProtocolError()
         return cls(*args)
@@ -39,9 +42,9 @@ class RequestHeader(ClientRequest):
     code: int
     payload_size: int
     size: int = format.size
-    pack: Callable[[], bytes] = generate_pack(
-        ["client_id", "version", "code", "payload_size"]
-    )
+
+    def pack(self) -> bytes:
+        return generate_pack(self, ["client_id", "version", "code", "payload_size"])
 
 
 @dataclass
@@ -50,7 +53,9 @@ class SignupRequest(ClientRequest):
     name: bytes
     pub_key: bytes
     size: int = format.size
-    pack: Callable[[], bytes] = generate_pack(["name", "pub_key"])
+
+    def pack(self) -> bytes:
+        return generate_pack(self, ["name", "pub_key"])
 
 
 @dataclass
@@ -63,8 +68,9 @@ class UserPublicKeyRequest(ClientRequest):
     format: ClassVar[struct.Struct] = struct.Struct("<16s")
     target_client_id: bytes
     size: int = format.size
-    pack: Callable[[], bytes] = generate_pack(["target_client_id"])
 
+    def pack(self) -> bytes:
+        return generate_pack(self, ["target_client_id"])
 
 @dataclass
 class SendMessageRequest(ClientRequest):
@@ -77,7 +83,7 @@ class SendMessageRequest(ClientRequest):
     @classmethod
     def unpack(cls, data: bytes):
         header = data[: cls.format.size]
-        payload = data[cls.format.size :]
+        payload = data[cls.format.size:]
         try:
             args = list(cls.format.unpack_from(header))
         except struct.error:
