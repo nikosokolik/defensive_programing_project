@@ -113,16 +113,16 @@ class MessageRecord:
     A class that represents a message in the message list response
     """
 
-    def __init__(self, sender_client_id: bytes, message_id: int, message: bytes):
+    def __init__(self, sender_client_id: bytes, message_type: int, message: bytes):
         self.sender_client_id: bytes = sender_client_id
-        self.message_id: int = message_id
+        self.message_type: int = message_type
         self.message: bytes = message
 
     def pack(self) -> bytes:
-        payload_format: struct.Struct = struct.Struct("<16siBi")
+        payload_format: struct.Struct = struct.Struct("<16sBi")
         message_size: int = len(self.message)
         return (
-            payload_format.pack(self.sender_client_id, self.message_id, message_size)
+            payload_format.pack(self.sender_client_id, self.message_type, message_size)
             + self.message
         )
 

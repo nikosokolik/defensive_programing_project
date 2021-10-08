@@ -124,8 +124,10 @@ void Controller::_DumpUserInfo() {
 	try {
 		ofs = std::ofstream(getMeInfoFilename(), std::ios::trunc);
 		ofs << _user_name.data() << std::endl;
-		for (int i = 0; i < _user_id.size(); ++i)
-			ofs << std::hex << std::setfill('0') << std::setw(2) << _user_id[i];
+		std::array<BYTE, 16> _user_id_bytes;
+		std::copy_n(_user_id.begin(), _user_id.size(), _user_id_bytes.begin());
+		for (int i = 0; i < _user_id_bytes.size(); ++i) 
+			ofs << std::hex << std::setfill('0') << std::setw(2) << (int)_user_id_bytes[i];
 		ofs << std::endl;
 		std::string* key = _key_manager->GetEncodedPrivateKey();
 		ofs << *key;
@@ -138,16 +140,18 @@ void Controller::_DumpUserInfo() {
 }
 
 
-void Controller::_GenerateNewKeyForUser(std::array<char, 16> target_user_id) {
-	std::array<char, 128> key;
+bool Controller::_GenerateNewKeyForUser(std::array<char, 16> target_user_id) {
+	std::array<char, 16> key;
 	auto s = _users->find(target_user_id);
 	if (s == _users->end()) {
 		std::cerr << "User is not in user list! check your input";
+		return false;
 	}
 	SymmetricKeyEncryptor sym_key = SymmetricKeyEncryptor();
-	std::array<CryptoPP::byte, 128> key_source = *sym_key.GetKey();
+	std::array<CryptoPP::byte, 16> key_source = *sym_key.GetKey();
 	std::copy_n(key_source.begin(), key_source.size(), key.begin());
 	s->second->UpdateSymmetricKey(key);
+	return true;
 }
 
 
@@ -167,20 +171,20 @@ Controller::~Controller() {
 }
 
 std::string* ReadUserNameFromCIN() {
-	std::string* user = new std::string();
+	std::string user_name;
 	std::cout << "Please enter the user's name: ";
-	std::getline(std::cin, *user);
-	while (user->length() < 0 || user->length() > 254) {
-		if (user->length() == 0) {
+	std::cin >> user_name;
+	while (user_name.length() < 0 || user_name.length() > 254) {
+		if (user_name.length() == 0) {
 			std::cerr << "Empty user names are not supported!" << std::endl;
 		}
-		if (user->length() > 255) {
+		if (user_name.length() > 255) {
 			std::cerr << "User name too long!";
 		}
 		std::cout << "Please enter the user's name: " << std::endl;
-		std::getline(std::cin, *user);
+		std::cin >> user_name;
 	}
-	return user;
+	return new std::string(user_name);
 }
 
 bool IsServerError(ResponsePayload* response) {
@@ -219,6 +223,7 @@ void Controller::Register() {
 		}
 		std::copy_n(signup_response->GetClientID().begin(), 16, std::begin(_user_id));
 		this->_DumpUserInfo();
+		_is_registered = true;
 	}
 	catch (NetworkException& e) {
 		std::cerr << "Could not connect to server! Shutting down" << std::endl << "--- Signup Failed! ---" << std::endl;
@@ -306,10 +311,19 @@ void Controller::GenerateSymmetricKeyForUser(std::array<char, 255> user_name) {
 		std::cerr << "User " << user_name.data() << " does not exist!" << std::endl;
 		return;
 	}
-	this->_GenerateNewKeyForUser(user_id);
 	auto s = _users->find(user_id);
-	SendMessageRequest symmetic_key_message = SendMessageRequest(user_id, SYMMETRIC_KEY_RESPONSE, s->second->GetSymmetricKey()->size(), s->second->GetSymmetricKey()->data());
-	RequestHeader h = RequestHeader(_user_id, USER_PUBLIC_KEY_REQUEST, &symmetic_key_message);
+	if (!s->second->GetIsPublicKeySet()) {
+		std::cerr << "Public key for user " << user_name.data() << " isn't found! Request if from server." << std::endl;
+		return;
+	}
+	if (!this->_GenerateNewKeyForUser(user_id)) {
+		return;
+	}
+	std::array<char, 160> public_key = *s->second->GetPublicKey();
+	PublicKeyManager km = PublicKeyManager(std::string(public_key.data(), public_key.size()));
+	std::string encrypted_key = *km.EncryptSymmetricKey(*s->second->GetSymmetricKey());
+	SendMessageRequest symmetic_key_message = SendMessageRequest(user_id, SYMMETRIC_KEY_RESPONSE, encrypted_key.size(), (char*)encrypted_key.data());
+	RequestHeader h = RequestHeader(_user_id, MESSAGE_USER_REQUEST, &symmetic_key_message);
 	try {
 		Dispatcher d = Dispatcher(_server_host.c_str(), _server_port, &h);
 		ResponsePayload* server_response = d.GetResult();
@@ -337,10 +351,18 @@ void Controller::SendMessageToUser(std::array<char, 255> user_name, char* messag
 		return;
 	}
 	auto s = _users->find(user_id);
+	if (!s->second->GetIsPublicKeySet()) {
+		std::cerr << "Public key for user " << user_name.data() << " isn't found! Request if from server." << std::endl;
+		return;
+	}
+	if (!s->second->GetIsSymmetricKeySet()) {
+		std::cerr << "Symetric key for user " << user_name.data() << " isn't found! Request if from the user." << std::endl;
+		return;
+	}
 	SymmetricKeyEncryptor encrypotor = SymmetricKeyEncryptor(*s->second->GetSymmetricKey());
 	std::string encrypted_message = encrypotor.ECBMode_Encrypt(message_content);
 	SendMessageRequest encrypted_message_request = SendMessageRequest(user_id, REGULAR_MESSAGE_REQUEST, encrypted_message.length(), (char*)encrypted_message.c_str());
-	RequestHeader h = RequestHeader(_user_id, USER_PUBLIC_KEY_REQUEST, &encrypted_message_request);
+	RequestHeader h = RequestHeader(_user_id, MESSAGE_USER_REQUEST, &encrypted_message_request);
 	try {
 		Dispatcher d = Dispatcher(_server_host.c_str(), _server_port, &h);
 		ResponsePayload* server_response = d.GetResult();
@@ -367,7 +389,7 @@ void Controller::RequestSymmetricKeyFromUser(std::array<char, 255> user_name) {
 		return;
 	}
 	SendMessageRequest symmetic_key_request = SendMessageRequest(user_id, SYMMETRIC_KEY_REQUEST, 0, NULL);
-	RequestHeader h = RequestHeader(_user_id, USER_PUBLIC_KEY_REQUEST, &symmetic_key_request);
+	RequestHeader h = RequestHeader(_user_id, MESSAGE_USER_REQUEST, &symmetic_key_request);
 	try {
 		Dispatcher d = Dispatcher(_server_host.c_str(), _server_port, &h);
 		ResponsePayload* server_response = d.GetResult();
@@ -387,7 +409,7 @@ void Controller::RequestSymmetricKeyFromUser(std::array<char, 255> user_name) {
 
 void Controller::RequestMessages() {
 	MessageListRequest message_list_request = MessageListRequest();
-	RequestHeader h = RequestHeader(_user_id, USER_PUBLIC_KEY_REQUEST, &message_list_request);
+	RequestHeader h = RequestHeader(_user_id, QUEUED_MESSAGES_REQUEST, &message_list_request);
 	try {
 		Dispatcher d = Dispatcher(_server_host.c_str(), _server_port, &h);
 		ResponsePayload* server_response = d.GetResult();
@@ -404,28 +426,31 @@ void Controller::RequestMessages() {
 		for (auto message : awaiting_messages->messages) {
 			auto sender = _users->find(message->GetSender());
 			if (sender == _users->end()) { continue; }
-			std::cout << "From: " << sender->second->GetClientName() << std::endl << "Content: " << std::endl;
+			std::cout << "From: " << sender->second->GetClientName()->data() << std::endl << "Content: " << std::endl;
 			switch (message->GetMessageType()) {
 			case SYMMETRIC_KEY_REQUEST:
-				std::cout << "Request for symmetric key" << std::endl;
+				std::cout << "\tRequest for symmetric key" << std::endl;
+				break;
 			case SYMMETRIC_KEY_RESPONSE:
-				std::array<char, 128> user_symmetric_key;
+				std::array<char, 16> user_symmetric_key;
 				encrypted_message = std::string(message->GetMessageContent(), message->GetMessageSize());
 				encrypotor = _key_manager->DecryptSymmetricKey(encrypted_message);
 				std::copy_n(encrypotor->GetKey()->begin(), user_symmetric_key.size(), user_symmetric_key.begin());
 				sender->second->UpdateSymmetricKey(user_symmetric_key);
 				delete encrypotor;
-				std::cout << "Symmetric key recieved" << std::endl;
+				std::cout << "\tSymmetric key recieved" << std::endl;
+				break;
 			case REGULAR_MESSAGE_REQUEST:
 				encrypotor = new SymmetricKeyEncryptor(*sender->second->GetSymmetricKey());
 				encrypted_message = std::string(message->GetMessageContent(), message->GetMessageSize());
 				decrypted_message = encrypotor->ECBMode_Decrypt(encrypted_message);
 				delete encrypotor;
 				std::cout << decrypted_message << std::endl;
+				break;
 			default:
-				std::cerr << "Unexpected message type!" << std::endl;
+				std::cerr << "--- Unexpected message type! ---" << std::endl;
 			}
-			std::cout << "----<EOM>--- " << std::endl << std::endl;
+			std::cout << "----<EOM>----" << std::endl << std::endl;
 		}
 	}
 	catch (NetworkException& e) {

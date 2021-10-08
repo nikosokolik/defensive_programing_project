@@ -9,12 +9,12 @@ CREATE_TABLES = [
     """CREATE TABLE IF NOT EXISTS client (
     id VARCHAR(16) NOT NULL,
     name VARCHAR(250) NOT NULL,
-    public_key VARBINARY(160) NOT NULL,
+    public_key VARBINARY(320) NOT NULL,
     last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id)
 );""",
     """CREATE TABLE IF NOT EXISTS message (
-    id int(4) NOT NULL PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL ,
     source VARCHAR(16) NOT NULL,
     destination VARCHAR(16) NOT NULL,
     type INT(1) NOT NULL,
@@ -121,9 +121,9 @@ class DBStorage(StorageLayer):
         identifier = identifier.replace("-", "")
         messages = []
         with self.connection:
-            for row in self.connection.execute(SELECT_UNREAD_MESSAGES, identifier):
+            for row in self.connection.execute(SELECT_UNREAD_MESSAGES, (identifier,)):
                 messages.append(row)
-                self.connection.execute(DELETE_MESSAGE, row[0])
+                self.connection.execute(DELETE_MESSAGE, (row[0],))
         return messages
 
     def update_user_last_seen(self, user_id) -> None:

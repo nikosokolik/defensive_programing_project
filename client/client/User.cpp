@@ -5,43 +5,35 @@ User::User(std::array<char, 16> client_id, std::array<char, 255> client_name) {
 	_client_id = new std::array<char, 16>();
 	_client_name = new std::array<char, 255>();
 	_public_key = new std::array<char, 160>();
-	_symmetric_key = new std::array<char, 128>();
+	_symmetric_key = new std::array<char, 16>();
 	*_client_id = client_id;
 	*_client_name = client_name;
 }
 
 void User::UpdatePublicKey(std::array<char, 160> public_key) {
-	*_public_key = public_key;
+	std::copy_n(public_key.begin(), public_key.size(), _public_key->begin());
 	_is_public_key_set = true;
 }
 
-void User::UpdateSymmetricKey(std::array<char, 128> symmetric_key) {
-	*_symmetric_key = symmetric_key;
+void User::UpdateSymmetricKey(std::array<char, 16> symmetric_key) {
+	std::copy_n(symmetric_key.begin(), symmetric_key.size(), _symmetric_key->begin());
 	_is_symmetric_key_set = true;
 }
 
 std::array<char, 16>* User::GetClientID() {
-	std::array<char, 16>* retval = new std::array<char, 16>();
-	retval = _client_id;
-	return retval;
+	return _client_id;
 }
 
 std::array<char, 255>* User::GetClientName() {
-	std::array<char, 255>* retval = new std::array<char, 255>();
-	retval = _client_name;
-	return retval;
+	return _client_name;
 }
 
 std::array<char, 160>* User::GetPublicKey() {
-	std::array<char, 160>* retval = new std::array<char, 160>();
-	retval = _public_key;
-	return retval;
+	return _public_key;
 }
 
-std::array<char, 128>* User::GetSymmetricKey() {
-	std::array<char, 128>* retval = new std::array<char, 128>();
-	retval = _symmetric_key;
-	return retval;
+std::array<char, 16>* User::GetSymmetricKey() {
+	return _symmetric_key;
 }
 
 User::~User() {

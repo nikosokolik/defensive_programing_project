@@ -75,7 +75,7 @@ class DispatchManager:
         self, request: server_protocol.SignupRequest, client_id: str
     ) -> server_protocol.SignupSuccess:
         user = User.create_new_user(self._storage, request)
-        return server_protocol.SignupSuccess(user.id.encode())
+        return server_protocol.SignupSuccess(uuid.UUID(user.id).bytes)
 
     @safe_call_decorator
     def _dispatch_user_list(
@@ -93,17 +93,17 @@ class DispatchManager:
         self, request: server_protocol.UserPublicKeyRequest, client_id: str
     ) -> server_protocol.UserPublicKey:
         user = User.get_user_by_id(self._storage, request.target_client_id.hex())
-        return server_protocol.UserPublicKey(user.id.encode(), user.public_key)
+        return server_protocol.UserPublicKey(uuid.UUID(user.id).bytes, user.public_key)
 
     @safe_call_decorator
     def _dispatch_send_message(
         self, request: server_protocol.SendMessageRequest, client_id: str
     ) -> server_protocol.MessageSent:
-        user = User.get_user_by_id(self._storage, request.target_client_id.decode())
+        user = User.get_user_by_id(self._storage, request.target_client_id.hex())
         message_id = user.send_message(
             self._storage, client_id, request.message_type, request.message_content
         )
-        return server_protocol.MessageSent(user.id, message_id)
+        return server_protocol.MessageSent(uuid.UUID(user.id).bytes, message_id)
 
     @safe_call_decorator
     def _dispatch_get_messages(
@@ -115,7 +115,7 @@ class DispatchManager:
         for message in messages:
             message_list.append(
                 server_protocol.MessageRecord(
-                    message.sourcem, message.message_id, message.content
+                    message.source.bytes, message.message_type, message.content
                 )
             )
         return server_protocol.MessageList(message_list)
@@ -156,7 +156,7 @@ class DispatchManager:
                 raise SecurityException(
                     "User with id {!r} does not exit!".format(request_header.client_id)
                 )
-        return self._dispatch(request, request_header.client_id.decode())
+        return self._dispatch(request, str(uuid.UUID(bytes=request_header.client_id)).replace("-", ""))
 
 
 class ServerLogic:

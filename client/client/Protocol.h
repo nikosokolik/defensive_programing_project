@@ -156,7 +156,6 @@ public:
 class AwaitingMessageRecord {
 private:
 	std::array<char, 16> _client_id;
-	int _message_id;
 	uint8_t _message_type;
 	int _message_size;
 	char* _content;
@@ -164,7 +163,6 @@ public:
 	AwaitingMessageRecord(char* data, int data_size);
 	virtual ~AwaitingMessageRecord();
 	std::array<char, 16> GetSender();
-	int GetMessageID();
 	char* GetMessageContent();
 	int GetMessageSize();
 	uint8_t GetMessageType();

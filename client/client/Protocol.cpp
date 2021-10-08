@@ -212,22 +212,25 @@ int MessageSentResponse::GetMessageID() {
 
 
 AwaitingMessageRecord::AwaitingMessageRecord(char* data, int data_size) {
-	if (data_size < 25) {
+	if (data_size < 21) {
 		throw ProtocolException();
 	}
 	_client_id.fill(0);
 	std::copy_n(data, 16, _client_id.begin());
-	_message_id = IntFromBuffer(data + 16);
-	_message_type = (uint8_t)(data[20]);
-	_message_size = IntFromBuffer(data + 21);
-	if (data_size < 25 + _message_size) {
+	_message_type = (uint8_t)(data[16]);
+	_message_size = IntFromBuffer(data + 17);
+	if (data_size < 21 + _message_size) {
 		throw ProtocolException();
+	}
+	if (_message_size == 0) {
+		_content = nullptr;
+		return;
 	}
 	_content = (char*)malloc(sizeof(char) * _message_size);
 	if (!_content) {
 		throw ProtocolException();
 	}
-	memcpy(_content, data + 25, _message_size);
+	memcpy(_content, data + 21, _message_size);
 }
 
 AwaitingMessageRecord::~AwaitingMessageRecord() {
@@ -240,12 +243,6 @@ AwaitingMessageRecord::~AwaitingMessageRecord() {
 std::array<char, 16> AwaitingMessageRecord::GetSender() {
 	return _client_id;
 }
-
-
-int AwaitingMessageRecord::GetMessageID() {
-	return _message_id;
-}
-
 
 char* AwaitingMessageRecord::GetMessageContent() {
 	return _content;
@@ -266,8 +263,8 @@ AwaitingMessagesResponse::AwaitingMessagesResponse(char* data, int data_size) : 
 	AwaitingMessageRecord* current_message;
 	while (data_size > 0) {
 		current_message = new AwaitingMessageRecord(data, data_size);
-		data_size = data_size - current_message->GetMessageSize();
-		data = data + current_message->GetMessageSize();
+		data_size = data_size - current_message->GetMessageSize() - 21;
+		data = data + current_message->GetMessageSize() + 21;
 		messages.push_back(current_message);
 	}
 }

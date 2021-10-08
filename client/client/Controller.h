@@ -34,7 +34,7 @@ private:
 	void _LoadUserInfo();
 	void _DumpUserInfo();
 	std::array<char, 16> _GetUserIDByName(std::array<char, 255> user_name);
-	void _GenerateNewKeyForUser(std::array<char, 16> target_user_id);
+	bool _GenerateNewKeyForUser(std::array<char, 16> target_user_id);
 public:
 	Controller();
 	virtual ~Controller();

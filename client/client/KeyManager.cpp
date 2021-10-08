@@ -30,21 +30,21 @@ std::string* KeyManager::GetPublicKey() {
 	/* User must free */
     std::string key;
 	CryptoPP::StringSink stringSource(key);
-	_public_key.BEREncode(stringSource.Ref());
+	_public_key.DEREncode(stringSource.Ref());
 	return new std::string(key);
 }
 
 
-SymmetricKeyEncryptor::SymmetricKeyEncryptor(std::array<char, 128> key) {
+SymmetricKeyEncryptor::SymmetricKeyEncryptor(std::array<char, 16> key) {
     std::copy_n(key.begin(), key.size(), std::begin(_key));
 }
 
 
 SymmetricKeyEncryptor::SymmetricKeyEncryptor() {
     CryptoPP::AutoSeededRandomPool prng;
-    CryptoPP::SecByteBlock key(CryptoPP::AES::DEFAULT_KEYLENGTH);
-    prng.GenerateBlock(key, key.size());
-    std::copy_n(key.begin(), key.size(), std::begin(_key));
+    CryptoPP::byte key[16];
+    prng.GenerateBlock(key, sizeof(key));
+    std::copy_n(std::begin(key), 16, std::begin(_key));
 }
 
 
@@ -55,7 +55,7 @@ std::string SymmetricKeyEncryptor::ECBMode_Encrypt(std::string text) {
     {
         CryptoPP::byte iv[CryptoPP::AES::BLOCKSIZE];
         CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption enc;
-        enc.SetKeyWithIV(_key, 128, iv);
+        enc.SetKeyWithIV(_key, 16, iv);
         // The StreamTransformationFilter adds padding
         //  as required. ECB and CBC Mode must be padded
         //  to the block size of the cipher.
@@ -77,7 +77,7 @@ std::string SymmetricKeyEncryptor::ECBMode_Decrypt(std::string cipher) {
     {
         CryptoPP::byte iv[CryptoPP::AES::BLOCKSIZE];
         CryptoPP::CBC_Mode< CryptoPP::AES >::Decryption dec;
-        dec.SetKeyWithIV(_key, 128, iv);
+        dec.SetKeyWithIV(_key, 16, iv);
         // The StreamTransformationFilter removes
         //  padding as required.
         CryptoPP::StringSource s(cipher, true, new CryptoPP::StreamTransformationFilter(dec, new CryptoPP::StringSink(recovered))); // StringSource
@@ -90,9 +90,9 @@ std::string SymmetricKeyEncryptor::ECBMode_Decrypt(std::string cipher) {
     return recovered;
 }
 
-std::array<CryptoPP::byte, 128>* SymmetricKeyEncryptor::GetKey() {
-    std::array<CryptoPP::byte, 128>* retval = new std::array<CryptoPP::byte, 128>();
-    std::copy_n(retval->begin(), retval->size(), std::begin(_key));
+std::array<CryptoPP::byte, 16>* SymmetricKeyEncryptor::GetKey() {
+    std::array<CryptoPP::byte, 16>* retval = new std::array<CryptoPP::byte, 16>();
+    std::copy_n(std::begin(_key), 16, retval->begin());
     return retval;
 }
 
@@ -101,15 +101,14 @@ SymmetricKeyEncryptor* KeyManager::DecryptSymmetricKey(std::string enc) {
     std::string decrypted;
     CryptoPP::RSAES_OAEP_SHA_Decryptor d(_private_key);
     CryptoPP::AutoSeededRandomPool prng;
-    CryptoPP::StringSink s = CryptoPP::StringSink(decrypted);
-    CryptoPP::PK_DecryptorFilter* decryptor = new CryptoPP::PK_DecryptorFilter(prng, d, &s);
-    CryptoPP::StringSource(enc, true, decryptor);
-    if (decrypted.size() != 128) {
+    CryptoPP::StringSource ss(enc, true,
+        new CryptoPP::PK_DecryptorFilter(prng, d,
+            new CryptoPP::StringSink(decrypted)));
+    if (decrypted.size() != 16) {
         throw KeyManagerException();
     }
-    std::array<char, 128> key;
+    std::array<char, 16> key;
     std::copy_n(decrypted.begin(), decrypted.length(), key.begin());
-    delete decryptor;
     return new SymmetricKeyEncryptor(key);
 }
 
@@ -117,10 +116,10 @@ SymmetricKeyEncryptor* KeyManager::DecryptSymmetricKey(std::string enc) {
 std::string* PublicKeyManager::EncryptSymmetricKey(SymmetricKeyEncryptor key) {
     std::string* encrypted = new std::string();
     CryptoPP::RSAES_OAEP_SHA_Encryptor e(_public_key);
-    CryptoPP::RandomPool prng;
-    std::array<CryptoPP::byte, 128>* key_data = key.GetKey();
+    CryptoPP::AutoSeededRandomPool prng;
+    std::array<CryptoPP::byte, 16>* key_data = key.GetKey();
     std::string string_key_data = std::string(key_data->begin(), key_data->end());
-    CryptoPP::StringSource(string_key_data, true,
+    CryptoPP::StringSource ss(string_key_data, true,
         new CryptoPP::PK_EncryptorFilter(prng, e,
             new CryptoPP::StringSink(*encrypted)));
     delete key_data;
@@ -129,6 +128,6 @@ std::string* PublicKeyManager::EncryptSymmetricKey(SymmetricKeyEncryptor key) {
 
 
 PublicKeyManager::PublicKeyManager(std::string encoded) {
-    CryptoPP::ArraySource s(encoded.c_str(), encoded.length());
-    _public_key.Load(s);
+    CryptoPP::StringSource s(encoded, true);
+    _public_key.Load(s.Ref());
 }

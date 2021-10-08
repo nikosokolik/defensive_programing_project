@@ -14,13 +14,13 @@ class KeyManagerException : public std::exception {
 
 class SymmetricKeyEncryptor {
 private:
-	CryptoPP::byte _key[128];
+	CryptoPP::byte _key[16];
 public:
 	SymmetricKeyEncryptor();
-	SymmetricKeyEncryptor(std::array<char, 128> key);
+	SymmetricKeyEncryptor(std::array<char, 16> key);
 	std::string ECBMode_Encrypt(std::string text);
 	std::string ECBMode_Decrypt(std::string cipher);
-	std::array<CryptoPP::byte,128>* GetKey();
+	std::array<CryptoPP::byte,16>* GetKey();
 };
 
 
